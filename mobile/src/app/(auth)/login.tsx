@@ -96,8 +96,8 @@ function LoginForm() {
           <T v="h1" style={{ textAlign: 'center' }}>Welcome back</T>
           <T muted style={{ textAlign: 'center' }}>Sign in to your HR Connect workspace.</T>
         </View>
-        <Input label="Work email" icon={ViewAnimated} value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="username" keyboardType="email-address" placeholder="name@company.com" error={fieldErr.email} variant="outline" accessibilityLabel="Work email" />
-        <Input label="Password" icon={LockKeyholeAnimated} value={password} onChangeText={setPassword} secureTextEntry={!show} autoCapitalize="none" autoComplete="current-password" placeholder="Enter your password" onSubmitEditing={submit} error={fieldErr.password} variant="outline" accessibilityLabel="Password"
+        <Input icon={ViewAnimated} value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="username" keyboardType="email-address" placeholder="name@company.com" error={fieldErr.email} variant="outline" accessibilityLabel="Work email" />
+        <Input icon={LockKeyholeAnimated} value={password} onChangeText={setPassword} secureTextEntry={!show} autoCapitalize="none" autoComplete="current-password" placeholder="Enter your password" onSubmitEditing={submit} error={fieldErr.password} variant="outline" accessibilityLabel="Password"
           rightComponent={<Pressable onPress={() => setShow(!show)} accessibilityRole="button" accessibilityLabel={show ? 'Hide password' : 'Show password'} hitSlop={10}><ViewAnimated size={18} color={show ? '#243B60' : '#475569'} /></Pressable>} />
         <Row style={{ justifyContent: 'space-between' }} wrap>
           <Checkbox checked={remember} onCheckedChange={setRemember} label="Remember this session" />
