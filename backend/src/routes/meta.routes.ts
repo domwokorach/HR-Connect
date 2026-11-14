@@ -1,0 +1,21 @@
+import { Router } from 'express';
+import * as c from '../controllers/meta.controller';
+import { authenticate, requireRole } from '../middleware/auth';
+
+const admin = requireRole('ADMIN');
+export const metaRoutes = Router();
+metaRoutes.use(authenticate);
+metaRoutes.get('/departments', c.departments);
+metaRoutes.post('/departments', admin, c.createDepartment);
+metaRoutes.get('/schedules', c.schedules);
+metaRoutes.patch('/schedules/:id', admin, c.updateSchedule);
+metaRoutes.get('/holidays', c.holidays);
+metaRoutes.post('/holidays', admin, c.createHoliday);
+metaRoutes.delete('/holidays/:id', admin, c.deleteHoliday);
+metaRoutes.get('/leave-types', c.leaveTypes);
+metaRoutes.post('/leave-types', admin, c.createLeaveType);
+metaRoutes.get('/settings', c.getSettings);
+metaRoutes.patch('/settings', admin, c.updateSettings);
+metaRoutes.post('/settings/purge', admin, c.purge);
+metaRoutes.get('/audit-logs', admin, c.auditLogs);
+metaRoutes.get('/me/export', c.exportMine);

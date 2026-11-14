@@ -1,0 +1,32 @@
+import { Router } from 'express';
+import * as notifications from '../controllers/notifications.controller';
+import * as uploads from '../controllers/uploads.controller';
+import { authenticate } from '../middleware/auth';
+import { attendanceRoutes } from './attendance.routes';
+import { authRoutes } from './auth.routes';
+import { benefitRoutes } from './benefits.routes';
+import { employeeRoutes } from './employees.routes';
+import { leaveRoutes } from './leave.routes';
+import { metaRoutes } from './meta.routes';
+import { payrollRoutes } from './payroll.routes';
+import { recruitmentRoutes } from './recruitment.routes';
+import { reportRoutes } from './reports.routes';
+import { trainingRoutes } from './training.routes';
+
+export const router = Router();
+router.use('/auth', authRoutes);
+router.use('/employees', employeeRoutes);
+router.use('/attendance', attendanceRoutes);
+router.use('/leaves', leaveRoutes);
+router.use('/payroll', payrollRoutes);
+router.use('/recruitment', recruitmentRoutes);
+router.use('/training', trainingRoutes);
+router.use('/benefits', benefitRoutes);
+router.use('/reports', reportRoutes);
+router.get('/notifications', authenticate, notifications.list);
+router.post('/notifications/read-all', authenticate, notifications.readAll);
+router.patch('/notifications/:id/read', authenticate, notifications.read);
+router.post('/uploads', authenticate, uploads.uploader.single('file'), uploads.upload);
+router.post('/uploads/:id/link', authenticate, uploads.link);
+router.get('/files/:token', uploads.download); // authorised by the short-lived signed token
+router.use(metaRoutes);
