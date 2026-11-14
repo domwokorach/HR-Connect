@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import multer from 'multer';
@@ -9,7 +10,8 @@ import { actorOf } from '../middleware/auth';
 import { isAdmin, requireEmployee } from '../services/access';
 import { signFileToken, verifyFileToken } from '../services/tokens';
 
-const dir = path.resolve(config.UPLOAD_DIR);
+// Vercel's filesystem is read-only apart from /tmp (ephemeral), so uploads go there when serverless.
+const dir = process.env.VERCEL ? path.join(os.tmpdir(), 'uploads') : path.resolve(config.UPLOAD_DIR);
 fs.mkdirSync(dir, { recursive: true });
 const ALLOWED: Record<string, string> = { 'application/pdf': '.pdf', 'image/png': '.png', 'image/jpeg': '.jpg', 'application/msword': '.doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx' };
 
