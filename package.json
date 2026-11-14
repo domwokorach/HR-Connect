@@ -4,6 +4,7 @@
   "scripts": {
     "install:all": "npm --prefix backend install && npm --prefix mobile install",
     "api": "npm --prefix backend run dev",
+    "start": "npm --prefix mobile run start",
     "app": "npm --prefix mobile run start",
     "web": "npm --prefix mobile run web",
     "db:migrate": "npm --prefix backend run db:deploy",
@@ -22,7 +23,6 @@
   },
   "version": "1.0.0",
   "description": "A premium, secure, cross-platform Human Resource Management System (HRMS) for iOS, Android and Web, featuring employee management, attendance tracking, leave management, payroll, recruitment, training, approvals and real-time workforce analytics.",
-  "main": "expo-router/entry",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/domwokorach/HR-Connect.git"
