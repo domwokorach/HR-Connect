@@ -90,3 +90,12 @@ Serve the API over **HTTPS** behind a TLS proxy (`NODE_ENV=production` enables S
 - Dates/times are typed (`YYYY-MM-DD`, `HH:MM`); notifications are in-app only; PDF export uses `expo-print` (print dialog on web).
 - On web the charts log a react-native-svg "Unknown event handler property" dev warning; I did not verify that tap-to-inspect works on web.
 # HR-Connect
+
+## Project rules & legal
+- [RULE.md](RULE.md) — rules for contributors and AI assistants (stack, security boundaries, design, workflow).
+- [COPYRIGHT.md](COPYRIGHT.md) — copyright notice and third-party licences. The holder name still needs filling in.
+
+## Branding, icon & splash
+- App icon: `mobile/assets/images/icon.png` (1024×1024, opaque), referenced by `expo.icon` and `expo.ios.icon` in `mobile/app.json`.
+- Launch: native splash (`expo-splash-screen` plugin, white background) followed by a 5-second animated logo splash (`src/components/brand/AnimatedSplash.tsx`: 1 s fade in, 3 s hold, 1 s fade out; shown once per launch).
+- Login form uses Animate UI Hugeicons on web (`src/components/brand/FormIcons.web.tsx`) and static Lucide icons on native.
