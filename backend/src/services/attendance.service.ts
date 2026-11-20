@@ -7,6 +7,23 @@ import type { Actor } from '../middleware/auth';
 import { assertCanReview, requireEmployee } from './access';
 import { audit } from './audit';
 import { notifyEmployee } from './notify';
+import { verifyWorkplace } from '../lib/workplace';
+
+export interface Origin { ip: string | null; deviceId?: string }
+
+/** Evaluates the network / device / remote-arrangement signals for one working-session event. */
+export async function evaluateOrigin(employeeId: string, location: WorkLocation, o: Origin, tx: Tx | typeof prisma = prisma) {
+  const [rules, device, emp] = await Promise.all([
+    tx.networkPolicy.findMany({ where: { isActive: true }, select: { cidr: true } }),
+    o.deviceId ? tx.trustedDevice.findUnique({ where: { employeeId_deviceId: { employeeId, deviceId: o.deviceId } } }) : null,
+    tx.employee.findUnique({ where: { id: employeeId }, select: { remoteApproved: true } }),
+  ]);
+  if (device) await tx.trustedDevice.update({ where: { id: device.id }, data: { lastSeenAt: new Date() } });
+  return verifyWorkplace({ location, ip: o.ip, networkRules: rules.map((r) => r.cidr), deviceStatus: o.deviceId ? device?.status ?? 'pending' : 'unknown', remoteApproved: !!emp?.remoteApproved });
+}
+
+const logEvent = (tx: Tx | typeof prisma, rec: { id: string; employeeId: string; verification: Attendance['verification'] }, type: string, o: Origin, note?: string) =>
+  tx.attendanceEvent.create({ data: { attendanceId: rec.id, employeeId: rec.employeeId, type, ip: o.ip, deviceId: o.deviceId, verification: rec.verification, note } });
 
 export async function settings() {
   return prisma.companySettings.upsert({ where: { id: 1 }, update: {}, create: {} });
@@ -46,7 +63,7 @@ async function openRecord(employeeId: string) {
   return rec;
 }
 
-export async function clockIn(actor: Actor, location: WorkLocation) {
+export async function clockIn(actor: Actor, location: WorkLocation, origin: Origin = { ip: null }) {
   const employeeId = requireEmployee(actor);
   const cfg = await settings();
   const date = todayIn(cfg.timezone);
@@ -57,9 +74,13 @@ export async function clockIn(actor: Actor, location: WorkLocation) {
       const existing = await tx.attendance.findUnique({ where: { employeeId_workDate: { employeeId, workDate: date } } });
       if (existing?.clockIn) throw conflict('Already clocked in today');
       if (existing?.status === 'on_leave') throw conflict('You are on approved leave today');
+      const v = await evaluateOrigin(employeeId, location, origin, tx);
+      const now = new Date();
+      const fields = { clockIn: now, workLocation: location, verification: v.verification, clockInIp: origin.ip, clockInDeviceId: origin.deviceId ?? null, lastCheckAt: now };
       const rec = existing
-        ? await tx.attendance.update({ where: { id: existing.id }, data: { clockIn: new Date(), workLocation: location, status: 'present' } })
-        : await tx.attendance.create({ data: { employeeId, workDate: date, clockIn: new Date(), workLocation: location } });
+        ? await tx.attendance.update({ where: { id: existing.id }, data: { ...fields, status: 'present' } })
+        : await tx.attendance.create({ data: { employeeId, workDate: date, ...fields } });
+      await logEvent(tx, rec, 'clock_in', origin, v.reason);
       return recompute(tx, rec.id, ctx);
     });
   } catch (e) {
@@ -68,25 +89,41 @@ export async function clockIn(actor: Actor, location: WorkLocation) {
   }
 }
 
-export async function startBreak(actor: Actor) {
+export async function startBreak(actor: Actor, origin: Origin = { ip: null }) {
   const rec = await openRecord(requireEmployee(actor));
   if (rec.breaks.some((b) => !b.endedAt)) throw conflict('A break is already in progress');
-  await prisma.attendanceBreak.create({ data: { attendanceId: rec.id } });
+  await prisma.$transaction([prisma.attendanceBreak.create({ data: { attendanceId: rec.id } }), logEvent(prisma, rec, 'break_start', origin)]);
   return rec;
 }
 
-export async function endBreak(actor: Actor) {
+export async function endBreak(actor: Actor, origin: Origin = { ip: null }) {
   const rec = await openRecord(requireEmployee(actor));
   const open = rec.breaks.find((b) => !b.endedAt);
   if (!open) throw badRequest('No break in progress');
-  await prisma.attendanceBreak.update({ where: { id: open.id }, data: { endedAt: new Date() } });
+  await prisma.$transaction([prisma.attendanceBreak.update({ where: { id: open.id }, data: { endedAt: new Date() } }), logEvent(prisma, rec, 'break_end', origin)]);
   return rec;
 }
 
-export async function clockOut(actor: Actor) {
+/** Periodic "still working" confirmation. Re-evaluates the origin; a failed check flags the day for review but never ends the session. */
+export async function sessionCheck(actor: Actor, origin: Origin) {
+  const employeeId = requireEmployee(actor);
+  const rec = await openRecord(employeeId);
+  if (rec.breaks.some((b) => !b.endedAt)) throw conflict('End your break before confirming your session');
+  return prisma.$transaction(async (tx) => {
+    const v = await evaluateOrigin(employeeId, rec.workLocation ?? 'office', origin, tx);
+    const keep = rec.verification === 'hr_approved'; // an HR decision is not overwritten by a later check
+    const verification = keep ? rec.verification : v.verification === 'needs_review' || rec.verification === 'needs_review' ? 'needs_review' : 'verified';
+    const updated = await tx.attendance.update({ where: { id: rec.id }, data: { lastCheckAt: new Date(), verification } });
+    await logEvent(tx, updated, 'check', origin, v.reason);
+    return updated;
+  });
+}
+
+export async function clockOut(actor: Actor, origin: Origin = { ip: null }) {
   const rec = await openRecord(requireEmployee(actor));
   return prisma.$transaction(async (tx) => {
     const now = new Date();
+    await logEvent(tx, rec, 'clock_out', origin);
     await tx.attendanceBreak.updateMany({ where: { attendanceId: rec.id, endedAt: null }, data: { endedAt: now } });
     await tx.attendance.update({ where: { id: rec.id }, data: { clockOut: now } });
     return recompute(tx, rec.id);
@@ -101,7 +138,9 @@ export async function today(actor: Actor) {
     prisma.attendance.findUnique({ where: { employeeId_workDate: { employeeId, workDate: date } }, include: { breaks: true } }),
     employeeContext(employeeId),
   ]);
-  return { date, timezone: cfg.timezone, record, schedule: ctx.schedule, isWorkingDay: isWorkingDay(ctx, date) };
+  const open = !!record?.clockIn && !record.clockOut;
+  const nextCheckDueAt = open ? new Date((record.lastCheckAt ?? record.clockIn!).getTime() + cfg.checkIntervalMinutes * 60_000) : null;
+  return { date, timezone: cfg.timezone, record, schedule: ctx.schedule, isWorkingDay: isWorkingDay(ctx, date), checkIntervalMinutes: cfg.checkIntervalMinutes, nextCheckDueAt, checkOverdue: !!nextCheckDueAt && nextCheckDueAt < new Date() };
 }
 
 export async function requestCorrection(actor: Actor, d: { workDate: string; clockIn: string; clockOut: string; location: WorkLocation; reason: string }) {

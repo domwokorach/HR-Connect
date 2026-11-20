@@ -1,4 +1,4 @@
-import type { Employee, Prisma } from '@prisma/client';
+import type { AccessScope, Employee, Prisma } from '@prisma/client';
 import type { Actor } from '../middleware/auth';
 import { forbidden, notFound } from '../lib/errors';
 import { prisma } from '../lib/prisma';
@@ -38,13 +38,15 @@ export const requireEmployee = (a: Actor): string => { if (!a.employeeId) throw 
 
 type EmployeeWithRels = Employee & { department?: { id: string; name: string } | null; user?: { role: string; isActive: boolean } | null };
 
-/** Confidential fields (salary, phone, address) are only ever returned to HR and to the employee themself. */
-export function toEmployeeDto(e: EmployeeWithRels, a: Actor) {
+/** Confidential fields (salary, phone, address) are only returned to HR and the employee themself, plus any scopes `granted` through an approved access request. */
+export function toEmployeeDto(e: EmployeeWithRels, a: Actor, granted?: ReadonlySet<AccessScope>) {
   const confidential = isAdmin(a) || a.employeeId === e.id;
   const { phone, homeAddress, salary, currency, userId, user, ...rest } = e;
   return {
     ...rest, hasLogin: !!userId, loginRole: isAdmin(a) ? user?.role ?? null : undefined,
-    ...(confidential ? { phone, homeAddress, salary, currency } : {}),
+    ...(confidential || granted?.has('CONTACT') ? { phone, homeAddress } : {}),
+    ...(confidential || granted?.has('COMPENSATION') ? { salary, currency } : {}),
+    ...(!confidential && granted?.size ? { accessGranted: [...granted] } : {}),
   };
 }
 

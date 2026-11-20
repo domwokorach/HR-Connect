@@ -60,7 +60,7 @@ describe('employee data protection', () => {
     expect((await get('staff', `/api/payroll/payslips/employee/${s.staff.emp.id}`)).status).toBe(403);
     expect((await get('admin', `/api/payroll/payslips/employee/${s.staff.emp.id}`)).body).toEqual([]);
     expect((await get('staff', `/api/employees/${s.staff.emp.id}/documents`)).status).toBe(200);
-    expect((await get('manager', `/api/employees/${s.staff.emp.id}/documents`)).status).toBe(200);
+    expect((await get('manager', `/api/employees/${s.staff.emp.id}/documents`)).status).toBe(403); // personal documents need an approved DOCUMENTS grant (see staff-access tests)
     expect((await get('other', `/api/employees/${s.staff.emp.id}/documents`)).status).toBe(403);
   });
 

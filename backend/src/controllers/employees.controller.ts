@@ -4,6 +4,7 @@ import { actorOf } from '../middleware/auth';
 import { body, query } from '../middleware/validate';
 import { assertCanViewEmployee, isAdmin, toEmployeeDto } from '../services/access';
 import { audit } from '../services/audit';
+import { activeGrants, requireScope } from '../services/staff-access.service';
 import { hashPassword } from '../services/auth.service';
 import { ensureBalances } from '../services/leave-balance';
 import { revokeAllForUser } from '../services/tokens';
@@ -26,7 +27,8 @@ export const list = ah(async (req, res) => {
     ...(q.q && { OR: [{ fullName: { contains: q.q, mode: 'insensitive' } }, { email: { contains: q.q, mode: 'insensitive' } }, { jobTitle: { contains: q.q, mode: 'insensitive' } }, { employeeCode: { contains: q.q, mode: 'insensitive' } }] }),
   };
   const rows = await prisma.employee.findMany({ where, include, orderBy: { fullName: 'asc' } });
-  res.json(rows.map((e) => toEmployeeDto(e, a)));
+  const grants = a.role === 'MANAGER' ? await activeGrants(a.employeeId) : new Map();
+  res.json(rows.map((e) => toEmployeeDto(e, a, grants.get(e.id))));
 });
 
 export const create = ah(async (req, res) => {
@@ -61,7 +63,9 @@ export const get = ah(async (req, res) => {
     ]);
     extra = { balances, trainings };
   } catch { /* colleagues only get directory fields */ }
-  res.json({ ...toEmployeeDto(e, a), ...extra });
+  const granted = a.role === 'MANAGER' ? (await activeGrants(a.employeeId, [id])).get(id) : undefined;
+  if (granted?.size) await audit({ actorId: a.userId, action: 'STAFF_DATA_VIEWED', entity: 'Employee', entityId: id, after: { scopes: [...granted] } });
+  res.json({ ...toEmployeeDto(e, a, granted), ...extra });
 });
 
 /** Uploaded documents tied to an employee: their leave attachments, and the CV if they were hired through recruitment. */
@@ -69,6 +73,7 @@ export const documents = ah(async (req, res) => {
   const a = actorOf(req);
   const id = String(req.params.id);
   await assertCanViewEmployee(a, id);
+  await requireScope(a, id, 'DOCUMENTS'); // personal documents are confidential: a manager needs an approved grant
   const files = await prisma.fileUpload.findMany({ where: { ownerId: id, kind: 'leave_document' }, orderBy: { createdAt: 'desc' } });
   const docs = files.map((f) => ({ id: f.id, name: f.originalName, kind: 'Leave document', size: f.size, createdAt: f.createdAt }));
   if (isAdmin(a)) { // CVs are recruitment data: HR only
@@ -127,4 +132,18 @@ export const deactivate = ah(async (req, res) => {
   });
   if (e.userId) await revokeAllForUser(e.userId);
   res.json({ ok: true });
+});
+
+/** Confidential fields only. Unlike GET /:id (which silently omits them), this fails loudly with ACCESS_RESTRICTED so the client can show the restricted screen. */
+export const confidential = ah(async (req, res) => {
+  const a = actorOf(req);
+  const id = String(req.params.id);
+  const e = await prisma.employee.findUnique({ where: { id }, include });
+  if (!e) throw notFound('Employee not found');
+  await assertCanViewEmployee(a, id);
+  const granted = isAdmin(a) || a.employeeId === id ? new Set(['CONTACT', 'COMPENSATION'] as const) : (await activeGrants(a.employeeId, [id])).get(id);
+  if (!granted?.size) { await requireScope(a, id, 'CONTACT'); } // throws ACCESS_RESTRICTED + audits the attempt
+  if (a.role === 'MANAGER') await audit({ actorId: a.userId, action: 'STAFF_DATA_VIEWED', entity: 'Employee', entityId: id, after: { scopes: [...granted!] } });
+  const dto = toEmployeeDto(e, a, granted);
+  res.json({ employeeId: id, accessGranted: [...granted!], ...('phone' in dto ? { phone: dto.phone, homeAddress: dto.homeAddress } : {}), ...('salary' in dto ? { salary: dto.salary, currency: dto.currency } : {}) });
 });

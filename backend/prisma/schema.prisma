@@ -29,6 +29,19 @@ enum EmployeeStatus {
   on_leave
 }
 
+enum AttendanceVerification {
+  verified // approved network/device (office) or HR-approved remote arrangement
+  needs_review // could not be verified; never silently rejected
+  hr_approved
+  hr_rejected
+}
+
+enum DeviceStatus {
+  pending
+  trusted
+  revoked
+}
+
 enum WorkLocation {
   office
   remote
@@ -129,14 +142,15 @@ enum UploadKind {
 }
 
 model CompanySettings {
-  id                 Int      @id @default(1)
-  companyName        String   @default("HR Connect")
-  timezone           String   @default("Europe/London")
-  country            String   @default("GB")
-  lateGraceMinutes   Int      @default(5)
-  overtimeMultiplier Float    @default(1.5)
-  retentionMonths    Int      @default(36)
-  updatedAt          DateTime @updatedAt
+  id                   Int      @id @default(1)
+  companyName          String   @default("HR Connect")
+  timezone             String   @default("Europe/London")
+  country              String   @default("GB")
+  lateGraceMinutes     Int      @default(5)
+  checkIntervalMinutes Int      @default(60) // how often a working session must be re-confirmed
+  overtimeMultiplier   Float    @default(1.5)
+  retentionMonths      Int      @default(36)
+  updatedAt            DateTime @updatedAt
 }
 
 model Department {
@@ -231,18 +245,22 @@ model Employee {
   salary         Decimal        @default(0) @db.Decimal(12, 2)
   currency       String         @default("GBP")
 
-  attendance    Attendance[]
-  corrections   AttendanceCorrection[]
-  leaveRequests LeaveRequest[]
-  leaveBalances LeaveBalance[]
-  payrollItems  PayrollItem[]
-  payslips      Payslip[]
-  trainings     EmployeeTraining[]
-  benefits      EmployeeBenefit[]
-  interviews    Interview[]
-  uploads       FileUpload[]
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  attendance      Attendance[]
+  corrections     AttendanceCorrection[]
+  leaveRequests   LeaveRequest[]
+  leaveBalances   LeaveBalance[]
+  payrollItems    PayrollItem[]
+  payslips        Payslip[]
+  trainings       EmployeeTraining[]
+  benefits        EmployeeBenefit[]
+  interviews      Interview[]
+  uploads         FileUpload[]
+  trustedDevices  TrustedDevice[]
+  remoteApproved  Boolean                @default(false) // HR-approved remote-work arrangement
+  accessRequested StaffAccessRequest[]   @relation("AccessRequester")
+  accessGrantedOn StaffAccessRequest[]   @relation("AccessSubject")
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@index([departmentId])
   @@index([managerId])
@@ -250,25 +268,30 @@ model Employee {
 }
 
 model Attendance {
-  id                    String            @id @default(uuid())
+  id                    String                 @id @default(uuid())
   employeeId            String
-  employee              Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee              Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   workDate              String
   clockIn               DateTime?
   clockOut              DateTime?
   workLocation          WorkLocation?
-  scheduledMinutes      Int               @default(480)
-  breakMinutes          Int               @default(0)
-  workedMinutes         Int               @default(0)
-  lateMinutes           Int               @default(0)
-  earlyDepartureMinutes Int               @default(0)
-  overtimeMinutes       Int               @default(0)
-  overtimeStatus        OvertimeStatus    @default(none)
-  status                AttendanceStatus  @default(present)
+  scheduledMinutes      Int                    @default(480)
+  breakMinutes          Int                    @default(0)
+  workedMinutes         Int                    @default(0)
+  lateMinutes           Int                    @default(0)
+  earlyDepartureMinutes Int                    @default(0)
+  overtimeMinutes       Int                    @default(0)
+  overtimeStatus        OvertimeStatus         @default(none)
+  status                AttendanceStatus       @default(present)
   notes                 String?
+  verification          AttendanceVerification @default(needs_review)
+  clockInIp             String?
+  clockInDeviceId       String?
+  lastCheckAt           DateTime?
+  events                AttendanceEvent[]
   breaks                AttendanceBreak[]
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   @@unique([employeeId, workDate])
   @@index([workDate])
@@ -574,4 +597,157 @@ model AuditLog {
 
   @@index([entity, createdAt])
   @@index([actorId])
+}
+
+// ---- Card payments (Visa Acceptance / Cybersource). Additive; unrelated to payroll's PaymentStatus. Never holds PAN/CVV/secrets. ----
+enum CardPaymentStatus {
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  DECLINED
+  FAILED
+  REVERSED
+  REFUNDED
+  UNDER_REVIEW
+}
+
+model PaymentTransaction {
+  id                String                  @id @default(uuid())
+  idempotencyKey    String                  @unique
+  providerReference String?                 @unique // Cybersource transaction id
+  amountMinor       Int
+  currency          String                  @db.VarChar(3)
+  status            CardPaymentStatus       @default(PENDING)
+  providerStatus    String?
+  businessRefType   String?
+  businessRefId     String?
+  createdById       String?
+  authorizedAt      DateTime?
+  capturedAt        DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  events            PaymentEvent[]
+  reconciliations   PaymentReconciliation[]
+
+  @@index([status, createdAt])
+  @@index([businessRefType, businessRefId])
+}
+
+model PaymentEvent {
+  id                String              @id @default(uuid())
+  eventId           String              @unique // provider notification id: dedupes redeliveries
+  eventType         String
+  providerReference String?
+  transactionId     String?
+  transaction       PaymentTransaction? @relation(fields: [transactionId], references: [id])
+  payload           Json // redacted
+  receivedAt        DateTime            @default(now())
+  processedAt       DateTime?
+
+  @@index([providerReference])
+  @@index([transactionId])
+}
+
+model PaymentReconciliation {
+  id             String             @id @default(uuid())
+  transactionId  String
+  transaction    PaymentTransaction @relation(fields: [transactionId], references: [id])
+  outcome        String // updated | unchanged | unmapped | error
+  providerStatus String?
+  errorCategory  String?
+  createdAt      DateTime           @default(now())
+
+  @@index([transactionId, createdAt])
+}
+
+model PaymentIntegrationStatus {
+  id                Int       @id
+  environment       String
+  lastSuccessAt     DateTime?
+  lastErrorCategory String?
+  lastCheckedAt     DateTime?
+}
+
+// ---- Staff access permission workflow: manager requests -> staff consents -> HR approves -> time-boxed grant. ----
+enum AccessScope {
+  CONTACT // phone, home address
+  COMPENSATION // salary, currency
+  DOCUMENTS // uploaded personal documents
+}
+
+enum AccessRequestStatus {
+  PENDING_STAFF
+  PENDING_HR
+  APPROVED
+  DECLINED_BY_STAFF
+  REJECTED_BY_HR
+  CANCELLED
+  REVOKED
+}
+
+model StaffAccessRequest {
+  id             String              @id @default(uuid())
+  requesterId    String
+  requester      Employee            @relation("AccessRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  subjectId      String
+  subject        Employee            @relation("AccessSubject", fields: [subjectId], references: [id], onDelete: Cascade)
+  businessReason String              @default("") // why the manager needs it (shown to staff and HR)
+  purpose        String // what the data will be used for
+  lawfulBasis    String? // recorded by HR on approval; separate from staff consent
+  scopes         AccessScope[]
+  durationDays   Int
+  status         AccessRequestStatus @default(PENDING_STAFF)
+  staffNote      String?
+  staffDecidedAt DateTime?
+  hrReviewerId   String? // User.id
+  hrNote         String?
+  hrDecidedAt    DateTime?
+  startsAt       DateTime?
+  endsAt         DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([requesterId, status])
+  @@index([subjectId, status])
+  @@index([status])
+}
+
+// ---- Workplace verification: approved networks, trusted devices, auditable working-time events. ----
+model NetworkPolicy {
+  id        String   @id @default(uuid())
+  name      String
+  cidr      String // single IP or CIDR, e.g. 203.0.113.0/24
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model TrustedDevice {
+  id         String       @id @default(uuid())
+  employeeId String
+  employee   Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  deviceId   String // client-generated stable id; a hint, not proof of identity
+  label      String
+  platform   String?
+  status     DeviceStatus @default(pending)
+  lastSeenAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  @@unique([employeeId, deviceId])
+}
+
+model AttendanceEvent {
+  id           String                 @id @default(uuid())
+  attendanceId String
+  attendance   Attendance             @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  employeeId   String
+  type         String // clock_in | break_start | break_end | check | clock_out
+  at           DateTime               @default(now())
+  ip           String?
+  deviceId     String?
+  verification AttendanceVerification
+  note         String?
+
+  @@index([attendanceId, at])
+  @@index([employeeId, at])
 }

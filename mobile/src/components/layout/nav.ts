@@ -14,6 +14,7 @@ export const NAV: NavItem[] = [
   { href: '/training', label: 'Training', short: 'Training', icon: 'training', roles: all, group: 'People Operations' },
   { href: '/benefits', label: 'Employee Benefits', short: 'Benefits', icon: 'benefits', roles: all, group: 'People Operations' },
   { href: '/payroll', label: 'Payroll', short: 'Payroll', icon: 'wallet', roles: all, group: 'People Operations' },
+  { href: '/payments', label: 'Visa Payments & Transactions', short: 'Payments', icon: 'wallet', roles: ['admin'], group: 'Analytics & Management' },
   { href: '/reports', label: 'Reports & Analytics', short: 'Reports', icon: 'reports', roles: ['admin', 'manager'], group: 'Analytics & Management' },
   { href: '/settings', label: 'Settings', short: 'Settings', icon: 'settings', roles: all, group: 'Account & Settings' },
 ];
