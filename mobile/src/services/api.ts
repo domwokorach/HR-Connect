@@ -15,6 +15,8 @@ export const setSessionExpiredHandler = (fn: () => void) => { onExpired = fn; };
 export function errorMessage(e: unknown): string {
   if (isAxiosError(e)) {
     const m = (e.response?.data as { error?: string } | undefined)?.error;
+    if (e.response?.status === 429) return m ?? 'Too many attempts. Please wait a few minutes and try again.';
+    if (e.response && e.response.status >= 500) return 'The service is temporarily unavailable. Please try again shortly.';
     if (m) return m;
     if (!e.response) return 'Cannot reach the server. Check your connection and the API address.';
     return `Request failed (${e.response.status})`;

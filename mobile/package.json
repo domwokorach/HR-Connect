@@ -4,6 +4,7 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@animate-ui/react": "^2.4.3",
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/nunito": "^0.4.2",
     "@expo/ui": "~58.0.28",
     "axios": "^1.21.1",

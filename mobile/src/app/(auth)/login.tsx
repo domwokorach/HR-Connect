@@ -1,113 +1,55 @@
 import { Redirect, useRouter } from 'expo-router';
-import { appFont } from '@/theme/typography';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { BrandHeadline } from '@/components/brand/ColourfulText';
-import { FeatureIcon, type FeatureIconName } from '@/components/brand/FeatureIcon';
-import { LockKeyholeAnimated, ShieldCheckAnimated, ViewAnimated } from '@/components/brand/FormIcons';
-import { Logo } from '@/components/brand/Logo';
-import { BRAND } from '@/components/brand/logo-geometry';
-import { Banner, Button, Row, T, useBreakpoint } from '@/components/ui';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { Pressable, Text } from 'react-native';
+import { AUTH, AuthCard, AuthenticationError, AuthFootnote, AuthLayout, BrandHeader, DemoCredentialsPanel, EmailField, PasswordField, ProductStatement, SecureSignInButton, useAuthType, type SignInStatus } from '@/components/auth/auth';
+import { useBreakpoint } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
-import { useAppFont } from '@/lib/fonts';
+import { DEMO_LOGIN_ENABLED } from '@/lib/demo';
 import { ModeProvider } from '@/providers/mode-provider';
 import { PaletteProvider } from '@/providers/palette-provider';
-import { apiBaseUrl } from '@/services/config';
 
-const FEATURES = [
-  ['users', 'One home for your people', 'Profiles, schedules, leave and benefits in a single workspace.'],
-  ['time', 'Time you can trust', 'Server-verified clock-ins, office or remote, with overtime approvals.'],
-  ['insight', 'Insight at a glance', 'Live attendance, payroll and training analytics for every role.'],
-  ['security', 'Secure by design', 'Role-based access, rotating sessions and a full audit trail.'],
-] as const satisfies readonly (readonly [FeatureIconName, string, string])[];
-
-function Feature({ icon, title, body }: { icon: FeatureIconName; title: string; body: string }) {
-  const regular = useAppFont('400');
-  const [hover, setHover] = useState(false);
-  return (
-    <Pressable onHoverIn={() => setHover(true)} onHoverOut={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)} style={{ cursor: 'default' } as never}>
-      <Row align="flex-start" gap={14}>
-        <View style={{ backgroundColor: hover ? '#2D4A75' : '#243B60', width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}><FeatureIcon name={icon} size={22} color="#F1F5F9" animate={hover} /></View>
-        <View style={{ flex: 1 }}>
-          <Text style={[{ color: BRAND.white, fontSize: 15 }, regular]}>{title}</Text>
-          <Text style={[{ color: '#B6BECD', fontSize: 13.5, lineHeight: 20 }, appFont('400')]}>{body}</Text>
-        </View>
-      </Row>
-    </Pressable>
-  );
-}
-
-/** Flat brand panel: Navy Dark surface, white/grey type, Navy Light icon tiles. No gradients, glow or blur. */
-function BrandPanel() {
-  return (
-    <View style={{ flex: 1, backgroundColor: BRAND.navyDark, paddingHorizontal: 64, paddingVertical: 56, justifyContent: 'space-between' }}>
-      <Logo variant="onDark" maxWidth={380} />
-      <View style={{ gap: 32, maxWidth: 520 }}>
-        <BrandHeadline tone="onDark" size={40} />
-        <View style={{ gap: 18 }}>
-          {FEATURES.map(([icon, title, body]) => <Feature key={title} icon={icon} title={title} body={body} />)}
-        </View>
-      </View>
-      <Text style={[{ color: '#8791A6', fontSize: 12 }, appFont('400')]}>© HR Connect · Authorised use only</Text>
-    </View>
-  );
-}
-
-function LoginForm() {
-  const { isWide, isTablet } = useBreakpoint();
+function SignInCard() {
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, sessionExpired } = useAuth();
+  const type = useAuthType();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [show, setShow] = useState(false);
-  const [remember, setRemember] = useState(true);
+  const [status, setStatus] = useState<SignInStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [fieldErr, setFieldErr] = useState<{ email?: string; password?: string }>({});
-  const [busy, setBusy] = useState(false);
-  const regular = useAppFont('400');
+  const busy = status !== 'idle';
 
   const submit = async () => {
     if (busy) return;
     const errs: typeof fieldErr = {};
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = 'Enter your work email address.';
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = 'Enter a valid work email address.';
     if (!password) errs.password = 'Enter your password.';
     setFieldErr(errs);
     if (Object.keys(errs).length) return;
-    setBusy(true); setError(null);
-    const err = await signIn(email, password, remember);
-    setBusy(false);
-    if (err) setError(err === 'Invalid email or password' ? 'Incorrect email or password.' : err);
+    setStatus('loading'); setError(null);
+    const err = await signIn(email, password, true);
+    if (err) { setStatus('idle'); setError(err === 'Invalid email or password' ? 'Invalid email or password. Please try again.' : err); }
+    else setStatus('success'); // the redirect to the role's dashboard follows from the session
   };
 
   return (
-    <View style={{ width: '100%', maxWidth: 420, gap: 24 }}>
-      {!isWide ? (
-        <View style={{ alignItems: 'center', gap: 20 }}>
-          <Logo variant="onLight" maxWidth={280} />
-          <View style={{ maxWidth: 360 }}><BrandHeadline tone="onLight" size={isTablet ? 30 : 24} /></View>
-        </View>
-      ) : null}
-      {/* simple card: white surface, 1px border, restrained shadow */}
-      <View style={{ backgroundColor: BRAND.white, borderRadius: 16, borderWidth: 1, borderColor: '#CBD5E1', padding: 28, gap: 18, shadowColor: BRAND.navyDark, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-        <View style={{ gap: 4, alignItems: 'center' }}>
-          <T v="h1" style={{ textAlign: 'center' }}>Welcome back</T>
-          <T muted style={{ textAlign: 'center' }}>Sign in to your HR Connect workspace.</T>
-        </View>
-        <Input icon={ViewAnimated} value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="username" keyboardType="email-address" placeholder="name@company.com" error={fieldErr.email} variant="outline" accessibilityLabel="Work email" />
-        <Input icon={LockKeyholeAnimated} value={password} onChangeText={setPassword} secureTextEntry={!show} autoCapitalize="none" autoComplete="current-password" placeholder="Enter your password" onSubmitEditing={submit} error={fieldErr.password} variant="outline" accessibilityLabel="Password"
-          rightComponent={<Pressable onPress={() => setShow(!show)} accessibilityRole="button" accessibilityLabel={show ? 'Hide password' : 'Show password'} hitSlop={10}><ViewAnimated size={18} color={show ? '#243B60' : '#475569'} /></Pressable>} />
-        <Row style={{ justifyContent: 'space-between' }} wrap>
-          <Checkbox checked={remember} onCheckedChange={setRemember} label="Remember this session" />
-          <Pressable onPress={() => router.push('/forgot-password' as never)} accessibilityRole="link" accessibilityLabel="Forgot password"><Text style={[{ color: BRAND.navy, fontSize: 13 }, regular]}>Forgot password?</Text></Pressable>
-        </Row>
-        {error ? <Banner tone="danger">{error}</Banner> : null}
-        <Button title="Sign in securely" icon={<ShieldCheckAnimated size={18} color={BRAND.white} />} onPress={submit} loading={busy} style={{ backgroundColor: '#0B1730' }} />
-      </View>
-      <T v="small" muted style={{ textAlign: 'center' }}>Accounts are created by your HR administrator.{'\n'}Connected to {apiBaseUrl()}</T>
-    </View>
+    <AuthCard>
+      <BrandHeader />
+      <Text accessibilityRole="header" style={[{ color: AUTH.navy, fontSize: 28 }, type(true)]}>Welcome back</Text>
+      <Text style={[{ color: AUTH.muted, fontSize: 13 }, type()]}>Sign in to your HR Connect workspace.</Text>
+      <EmailField value={email} onChangeText={(v) => { setEmail(v); setFieldErr((f) => ({ ...f, email: undefined })); }} error={!!fieldErr.email || !!error} disabled={busy} onSubmitEditing={submit} />
+      {fieldErr.email ? <AuthenticationError>{fieldErr.email}</AuthenticationError> : null}
+      <PasswordField value={password} onChangeText={(v) => { setPassword(v); setFieldErr((f) => ({ ...f, password: undefined })); }} error={!!fieldErr.password || !!error} disabled={busy} onSubmitEditing={submit} />
+      {fieldErr.password ? <AuthenticationError>{fieldErr.password}</AuthenticationError> : null}
+      {sessionExpired && !error ? <Text accessibilityRole="alert" style={[{ color: '#B86B0C', fontSize: 12 }, type()]}>Your session expired. Please sign in again.</Text> : null}
+      {error ? <AuthenticationError>{error}</AuthenticationError> : null}
+      <Pressable onPress={() => router.push('/forgot-password' as never)} disabled={busy} accessibilityRole="link" accessibilityLabel="Forgot password" style={{ alignSelf: 'flex-start' }}>
+        <Text style={[{ color: AUTH.blue, fontSize: 13 }, type(true)]}>Forgot password?</Text>
+      </Pressable>
+      {DEMO_LOGIN_ENABLED ? <DemoCredentialsPanel disabled={busy} onFill={(e, p) => { setEmail(e); setPassword(p); setFieldErr({}); setError(null); }} /> : null}
+      <SecureSignInButton status={status} onPress={submit} />
+      <AuthFootnote />
+    </AuthCard>
   );
 }
 
@@ -116,18 +58,13 @@ export default function Login() {
   const { isWide, isTablet } = useBreakpoint();
   if (!loading && user) return <Redirect href="/" />;
 
-  // The sign-in page keeps one fixed, flat brand look regardless of the user's saved theme.
+  // The sign-in page keeps one fixed look regardless of the user's saved theme.
   return (
     <PaletteProvider fixed="brand">
       <ModeProvider defaultMode="light">
-        <SafeAreaView style={{ flex: 1, backgroundColor: BRAND.greyLight }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, flexDirection: 'row' }}>
-            {isWide ? <BrandPanel /> : null}
-            <ScrollView style={{ flex: isWide ? 0.85 : 1, backgroundColor: BRAND.greyLight }} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: isTablet ? 40 : 20 }} keyboardShouldPersistTaps="handled">
-              <LoginForm />
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
+        <AuthLayout wide={isWide} tablet={isTablet} aside={<ProductStatement />}>
+          <SignInCard />
+        </AuthLayout>
       </ModeProvider>
     </PaletteProvider>
   );

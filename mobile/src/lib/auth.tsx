@@ -4,6 +4,8 @@ import type { CompanySettings, Role } from './types';
 
 interface AuthState {
   loading: boolean;
+  /** true when a previously valid session was ended by the server (refresh failed); cleared on next sign-in. */
+  sessionExpired: boolean;
   user: SessionUser | null;
   /** lower-case role used by the UI; the server decides what it may actually do. */
   role: Role;
@@ -21,12 +23,13 @@ const Ctx = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [settings, setSettings] = useState<CompanySettings>(defaultSettings);
 
   const loadSettings = useCallback(async () => { try { setSettings(await get<CompanySettings>('/settings')); } catch { /* keep defaults */ } }, []);
 
   useEffect(() => {
-    setSessionExpiredHandler(() => setUser(null));
+    setSessionExpiredHandler(() => { setUser(null); setSessionExpired(true); });
     let alive = true;
     // Restore the session: native uses the SecureStore refresh token, web uses the HttpOnly cookie.
     refreshSession().then(async (u) => {
@@ -39,17 +42,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadSettings]);
 
   const value = useMemo<AuthState>(() => ({
-    loading, user,
+    loading, user, sessionExpired,
     role: (user?.role.toLowerCase() as Role | undefined) ?? 'staff',
     profile: user ? { fullName: user.fullName, email: user.email } : null,
     employee: user?.employeeId ? { id: user.employeeId, fullName: user.fullName } : null,
     settings,
     signIn: async (email, password, remember = true) => {
-      try { const u = await loginRequest(email.trim(), password, remember); setUser(u); await loadSettings(); return null; } catch (e) { return errorMessage(e); }
+      try { const u = await loginRequest(email.trim(), password, remember); setSessionExpired(false); setUser(u); await loadSettings(); return null; } catch (e) { return errorMessage(e); }
     },
-    signOut: async () => { await logoutRequest(); setUser(null); },
+    signOut: async () => { await logoutRequest(); setSessionExpired(false); setUser(null); },
     refresh: async () => { await loadSettings(); },
-  }), [loading, user, settings, loadSettings]);
+  }), [loading, user, sessionExpired, settings, loadSettings]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
