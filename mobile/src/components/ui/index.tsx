@@ -284,13 +284,13 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 
 /** Renders loading (skeleton) / error / empty states around data. */
 export function Async<T2>({ state, empty, children }: {
-  state: { data: T2 | null; error: string | null; loading: boolean; reload: () => void };
+  state: { data: T2 | null; error: string | null; errorKind?: string | null; loading: boolean; reload: () => void };
   empty?: (d: T2) => boolean; children: (d: T2) => ReactNode;
 }) {
   if (state.loading && state.data === null) return <Loading />;
-  if (state.error && state.data === null) return <ErrorState message={state.error} onRetry={state.reload} />;
+  if (state.error && state.data === null) return <ErrorState message={state.error} onRetry={state.errorKind === 'maintenance' ? undefined : state.reload} />;
   if (state.data === null) return null;
-  if (empty?.(state.data)) return <EmptyState title="Nothing here yet" />;
+  if (empty?.(state.data)) return <EmptyState title="No information available yet." />;
   return <>{children(state.data)}</>;
 }
 
