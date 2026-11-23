@@ -5,6 +5,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, type TextStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { Check } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react-native';
+import { Copy01Icon, LockPasswordIcon, Tick02Icon, UserIcon } from '@hugeicons/core-free-icons';
+import { useToast } from '@/components/ui/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DEMO_ADMIN } from '@/lib/demo';
 import { EyeIcon, LockIcon, MailIcon, ShieldIcon } from './AuthIcons';
@@ -108,27 +112,67 @@ export function AuthenticationError({ children }: { children: ReactNode }) {
   return <Text accessibilityRole="alert" style={[{ color: AUTH.error, fontSize: 12, lineHeight: 17 }, type()]}>{children}</Text>;
 }
 
-/** Dev-only panel. Fills the form fields and nothing else; the user still presses "Sign in securely". */
+/** Copy-to-clipboard icon button with a hover/focus tooltip; swaps to a check for 1.6s after copying. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const type = useAuthType();
+  const [copied, setCopied] = useState(false);
+  const [tip, setTip] = useState(false);
+  useEffect(() => { if (!copied) return; const t = setTimeout(() => setCopied(false), 1600); return () => clearTimeout(t); }, [copied]);
+  const copy = async () => { await Clipboard.setStringAsync(value); setCopied(true); };
+  return (
+    <View>
+      {tip ? (
+        <View pointerEvents="none" style={{ position: 'absolute', bottom: 34, right: 0, backgroundColor: AUTH.navy, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+          <Text numberOfLines={1} style={[{ color: '#fff', fontSize: 11 }, type()]}>{copied ? 'Copied' : label}</Text>
+        </View>
+      ) : null}
+      <Pressable onPress={copy} onHoverIn={() => setTip(true)} onHoverOut={() => setTip(false)} onFocus={() => setTip(true)} onBlur={() => setTip(false)} hitSlop={8}
+        accessibilityRole="button" accessibilityLabel={label}
+        style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => ({ width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: hovered || pressed ? '#D3E0FF' : 'transparent' })}>
+        <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} size={16} color={copied ? AUTH.success : AUTH.blue} strokeWidth={1.8} />
+      </Pressable>
+    </View>
+  );
+}
+
+function DemoRow({ icon, label, value, copyLabel }: { icon: IconSvgElement; label: string; value: string; copyLabel: string }) {
+  const type = useAuthType();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: AUTH.card, borderRadius: 11, paddingLeft: 12, paddingRight: 6, minHeight: 44 }}>
+      <HugeiconsIcon icon={icon} size={18} color={AUTH.muted} strokeWidth={1.6} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[{ color: AUTH.muted, fontSize: 10 }, type()]}>{label}</Text>
+        <Text selectable numberOfLines={1} style={[{ color: AUTH.navy, fontSize: 13 }, type(true)]}>{value}</Text>
+      </View>
+      <CopyButton value={value} label={copyLabel} />
+    </View>
+  );
+}
+
+/**
+ * Dev-only panel (rendered only when DEMO_LOGIN_ENABLED). Fills the controlled form fields and nothing else;
+ * it never submits, the user still presses "Sign in securely".
+ */
 export function DemoCredentialsPanel({ onFill, disabled }: { onFill: (email: string, password: string) => void; disabled?: boolean }) {
   const type = useAuthType();
-  const [filled, setFilled] = useState(false);
+  const { success } = useToast();
   const reduce = useReducedMotion();
   const pulse = useSharedValue(1);
   const style = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
-  useEffect(() => { if (!filled) return; const t = setTimeout(() => setFilled(false), 2200); return () => clearTimeout(t); }, [filled]);
   const fill = () => {
     onFill(DEMO_ADMIN.email, DEMO_ADMIN.password);
-    setFilled(true);
+    success('Demo credentials filled successfully.');
     if (!reduce) pulse.set(withSequence(withTiming(1.02, { duration: 120 }), withTiming(1, { duration: 160 })));
   };
   return (
-    <Animated.View style={[{ backgroundColor: AUTH.demoBg, borderRadius: 16, padding: 14, gap: 9 }, style]}>
+    <Animated.View style={[{ backgroundColor: AUTH.demoBg, borderRadius: 16, padding: 14, gap: 10 }, style]}>
       <Text style={[{ color: AUTH.blue, fontSize: 11 }, type(true)]}>DEMO ACCOUNT · DEVELOPMENT ONLY</Text>
-      <Text selectable style={[{ color: AUTH.navy, fontSize: 13 }, type(true)]}>{DEMO_ADMIN.email}</Text>
-      <Text selectable style={[{ color: AUTH.muted, fontSize: 12 }, type()]}>Password: {DEMO_ADMIN.password}</Text>
-      <Pressable onPress={fill} disabled={disabled} accessibilityRole="button" style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => ({ backgroundColor: hovered || pressed ? '#D3E0FF' : AUTH.demoBtn, borderRadius: 11, paddingVertical: 15, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: disabled ? 0.6 : 1 })}>
-        {filled ? <Check size={16} color={AUTH.success} /> : null}
-        <Text style={[{ color: filled ? AUTH.success : AUTH.blue, fontSize: 14 }, type(true)]}>{filled ? 'Credentials filled' : 'Use demo credentials'}</Text>
+      <DemoRow icon={UserIcon} label="Work email" value={DEMO_ADMIN.email} copyLabel="Copy demo email" />
+      <DemoRow icon={LockPasswordIcon} label="Password" value={DEMO_ADMIN.password} copyLabel="Copy demo password" />
+      <Pressable onPress={fill} disabled={disabled} accessibilityRole="button" accessibilityLabel="Use Demo Account"
+        style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => ({ backgroundColor: hovered || pressed ? '#0C182D' : AUTH.navy, borderRadius: 11, paddingVertical: 15, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: disabled ? 0.6 : 1 })}>
+        <HugeiconsIcon icon={UserIcon} size={16} color="#fff" strokeWidth={1.8} />
+        <Text style={[{ color: '#fff', fontSize: 14 }, type(true)]}>Use Demo Account</Text>
       </Pressable>
     </Animated.View>
   );
