@@ -2,7 +2,8 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
-import { corsOrigins, isProd } from './config';
+import { configErrors, corsOrigins, isProd } from './config';
+import { prisma } from './lib/prisma';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import { handleWebhook } from './integrations/cybersource/cybersource.service';
 import { router } from './routes';
@@ -24,9 +25,18 @@ export function createApp() {
   });
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
-  app.get('/health', (_req, res) => res.json({ ok: true }));
-  app.use('/api', router);
+  app.get('/', (_req, res) => res.json({ application: 'HR Connect API', status: 'operational', service: 'HR Connect Backend' }));
+  app.get('/health', (_req, res) => res.json({ ok: true })); // liveness only: no dependencies
+  app.get('/ready', async (_req, res) => { // readiness: config + database; reports state, never details
+    const config = configErrors.length === 0;
+    const database = config && await prisma.$queryRaw`SELECT 1`.then(() => true, () => false);
+    res.status(config && database ? 200 : 503).json({ ready: config && database, config, database });
+  });
+  app.use('/api', (_req, res, next) => (configErrors.length ? res.status(503).json({ error: 'Server is misconfigured', code: 'CONFIG_INVALID' }) : next()), router);
   app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
 }
+
+// Vercel's Express runtime loads this module and expects the app as the default export.
+export default createApp();
