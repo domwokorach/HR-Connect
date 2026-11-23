@@ -11,18 +11,26 @@ interface AuthResponse { accessToken: string; refreshToken?: string; user: Sessi
 let onExpired: () => void = () => {};
 export const setSessionExpiredHandler = (fn: () => void) => { onExpired = fn; };
 
-/** Turn any failure into an Error whose message is safe to show the user. */
-export function errorMessage(e: unknown): string {
+export type ErrorKind = 'offline' | 'denied' | 'database' | 'server' | 'rate' | 'other';
+
+/** Classify a failure so screens can pick the right recovery; `message` is always safe to show the user. */
+export function describeError(e: unknown): { kind: ErrorKind; message: string; retryable: boolean } {
   if (isAxiosError(e)) {
-    const m = (e.response?.data as { error?: string } | undefined)?.error;
-    if (e.response?.status === 429) return m ?? 'Too many attempts. Please wait a few minutes and try again.';
-    if (e.response && e.response.status >= 500) return 'The service is temporarily unavailable. Please try again shortly.';
-    if (m) return m;
-    if (!e.response) return 'Cannot reach the server. Check your connection and the API address.';
-    return `Request failed (${e.response.status})`;
+    const body = e.response?.data as { error?: string; code?: string } | undefined;
+    const status = e.response?.status;
+    if (!e.response) return { kind: 'offline', message: 'Cannot reach the server. Check your connection and the API address.', retryable: true };
+    if (status === 429) return { kind: 'rate', message: body?.error ?? 'Too many attempts. Please wait a few minutes and try again.', retryable: false };
+    if (status === 403) return { kind: 'denied', message: body?.error ?? 'You do not have permission to view this.', retryable: false };
+    if (body?.code === 'SCHEMA_OUT_OF_DATE' || body?.code === 'DATABASE_UNAVAILABLE') return { kind: 'database', message: body.error ?? 'The database is unavailable.', retryable: body.code === 'DATABASE_UNAVAILABLE' };
+    if (status && status >= 500) return { kind: 'server', message: 'The service is temporarily unavailable. Please try again shortly.', retryable: [502, 503, 504].includes(status) };
+    if (body?.error) return { kind: 'other', message: body.error, retryable: false };
+    return { kind: 'other', message: `Request failed (${status})`, retryable: false };
   }
-  return e instanceof Error ? e.message : String(e);
+  return { kind: 'other', message: e instanceof Error ? e.message : String(e), retryable: false };
 }
+
+/** Turn any failure into an Error whose message is safe to show the user. */
+export const errorMessage = (e: unknown): string => describeError(e).message;
 
 http.interceptors.request.use((cfg) => {
   const t = getAccess();
