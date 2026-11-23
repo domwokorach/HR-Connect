@@ -5,6 +5,7 @@ import { LucideProvider } from 'lucide-react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppErrorBoundary, ErrorScreen } from '@/components/AppErrorBoundary';
 import { AnimatedSplash } from '@/components/brand/AnimatedSplash';
 import { ToastProvider } from '@/components/ui/toast';
 import { AuthProvider } from '@/lib/auth';
@@ -28,12 +29,18 @@ function Inner() {
   );
 }
 
+/** Expo Router renders this when a route throws. */
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  return <ErrorScreen error={error} onReload={retry} />;
+}
+
 export default function RootLayout() {
   // iOS uses the system rounded font; Android/web load Nunito. Keep the splash up until that settles (success or failure).
   const fontsSettled = useAppFonts();
   useEffect(() => { if (fontsSettled) SplashScreen.hideAsync().catch(() => {}); }, [fontsSettled]);
   if (!fontsSettled) return null;
   return (
+    <AppErrorBoundary>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <PaletteProvider storage={prefsStorage}>
@@ -52,5 +59,6 @@ export default function RootLayout() {
         </PaletteProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+    </AppErrorBoundary>
   );
 }

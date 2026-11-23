@@ -1,7 +1,10 @@
 import axios, { AxiosError, create, isAxiosError, type AxiosRequestConfig } from 'axios';
 import { Linking, Platform } from 'react-native';
-import { apiBaseUrl } from './config';
+import { apiBaseUrl, apiConfigured } from './config';
 import { clientType, getAccess, getRefresh, setAccess, setRefresh } from './token-store';
+
+export class ApiNotConfiguredError extends Error { constructor() { super('EXPO_PUBLIC_API_URL is not set for this build; set it to the API origin and re-export.'); this.name = 'ApiNotConfiguredError'; } }
+if (!apiConfigured()) console.error('[config] EXPO_PUBLIC_API_URL is not set for this build. API calls are disabled until it is set and the app is re-exported.');
 
 export const http = create({ baseURL: `${apiBaseUrl()}/api`, timeout: 20000, withCredentials: true, headers: { 'X-Client-Type': clientType } });
 
@@ -11,7 +14,7 @@ interface AuthResponse { accessToken: string; refreshToken?: string; user: Sessi
 let onExpired: () => void = () => {};
 export const setSessionExpiredHandler = (fn: () => void) => { onExpired = fn; };
 
-export type ErrorKind = 'offline' | 'denied' | 'maintenance' | 'database' | 'server' | 'rate' | 'credentials' | 'expired' | 'other';
+export type ErrorKind = 'config' | 'offline' | 'denied' | 'maintenance' | 'database' | 'server' | 'rate' | 'credentials' | 'expired' | 'other';
 
 /** Dev-only breadcrumb with the original failure; only method/url/status/code, never bodies, headers or tokens. */
 function logDiagnostic(e: AxiosError, code?: string) {
@@ -20,6 +23,7 @@ function logDiagnostic(e: AxiosError, code?: string) {
 
 /** Classify a failure so screens can pick the right recovery; `message` is always safe to show the user. */
 export function describeError(e: unknown): { kind: ErrorKind; message: string; retryable: boolean } {
+  if (e instanceof ApiNotConfiguredError) return { kind: 'config', message: 'This app is not configured to reach the service. Please contact your administrator.', retryable: false };
   if (isAxiosError(e)) {
     const body = e.response?.data as { error?: string; code?: string } | undefined;
     const status = e.response?.status;
@@ -46,6 +50,7 @@ export function describeError(e: unknown): { kind: ErrorKind; message: string; r
 export const errorMessage = (e: unknown): string => describeError(e).message;
 
 http.interceptors.request.use((cfg) => {
+  if (!apiConfigured()) throw new ApiNotConfiguredError(); // never send to a relative URL: that would hit the frontend origin
   const t = getAccess();
   if (t) cfg.headers.Authorization = `Bearer ${t}`;
   return cfg;
@@ -57,6 +62,7 @@ let refreshing: Promise<SessionUser | null> | null = null;
 export function refreshSession(): Promise<SessionUser | null> {
   refreshing ??= (async () => {
     try {
+      if (!apiConfigured()) return null;
       const stored = await getRefresh();
       if (clientType === 'mobile' && !stored) return null;
       const { data } = await axios.post<AuthResponse>(`${http.defaults.baseURL}/auth/refresh`, clientType === 'mobile' ? { refreshToken: stored } : {}, {

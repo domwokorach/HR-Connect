@@ -23,10 +23,12 @@ export function AnimatedSplash() {
     shown = true;
     const ease = Easing.inOut(Easing.cubic);
     const done = () => setVisible(false);
+    const failsafe = setTimeout(done, FADE_IN + HOLD + FADE_OUT + 1000); // the worklet callback can fail to fire on web; never leave the overlay up
     logoOpacity.value = withTiming(1, { duration: FADE_IN, easing: ease });
     scale.value = withTiming(1, { duration: FADE_IN + HOLD + FADE_OUT, easing: Easing.out(Easing.quad) });
     // the whole surface (logo included) fades away in the last second, revealing the app underneath
     surfaceOpacity.value = withDelay(FADE_IN + HOLD, withTiming(0, { duration: FADE_OUT, easing: ease }, (finished) => { if (finished) runOnJS(done)(); }));
+    return () => clearTimeout(failsafe);
   }, [logoOpacity, surfaceOpacity, scale]);
 
   const logoStyle = useAnimatedStyle(() => ({ opacity: logoOpacity.value, transform: [{ scale: scale.value }] }));

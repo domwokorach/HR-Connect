@@ -63,5 +63,37 @@
     "seed": "node --env-file=.env scripts/seed.mjs"
   },
   "private": true,
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
+  "description": "A premium, secure, cross-platform Human Resource Management System (HRMS) built with Expo, React Native, and TypeScript for Web, iOS, and Android, featuring employee management, attendance, leave, payroll, recruitment, and workforce analytics.",
+  "directories": {
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/domwokorach/HR-Connect.git"
+  },
+  "keywords": [
+    "hrms",
+    "human-resources",
+    "employee-management",
+    "attendance",
+    "leave-management",
+    "payroll",
+    "recruitment",
+    "workforce-analytics",
+    "expo",
+    "react-native",
+    "typescript",
+    "ios",
+    "android",
+    "web",
+    "postgresql",
+    "prisma"
+  ],
+  "author": "dominic wokorach",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/domwokorach/HR-Connect/issues"
+  },
+  "homepage": "https://github.com/domwokorach/HR-Connect#readme"
 }
