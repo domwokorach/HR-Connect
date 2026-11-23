@@ -11,19 +11,30 @@ interface AuthResponse { accessToken: string; refreshToken?: string; user: Sessi
 let onExpired: () => void = () => {};
 export const setSessionExpiredHandler = (fn: () => void) => { onExpired = fn; };
 
-export type ErrorKind = 'offline' | 'denied' | 'maintenance' | 'database' | 'server' | 'rate' | 'other';
+export type ErrorKind = 'offline' | 'denied' | 'maintenance' | 'database' | 'server' | 'rate' | 'credentials' | 'expired' | 'other';
+
+/** Dev-only breadcrumb with the original failure; only method/url/status/code, never bodies, headers or tokens. */
+function logDiagnostic(e: AxiosError, code?: string) {
+  if (__DEV__) console.warn('[api]', e.config?.method?.toUpperCase(), e.config?.url, e.response?.status ?? e.code ?? 'no response', code ?? '', e.message);
+}
 
 /** Classify a failure so screens can pick the right recovery; `message` is always safe to show the user. */
 export function describeError(e: unknown): { kind: ErrorKind; message: string; retryable: boolean } {
   if (isAxiosError(e)) {
     const body = e.response?.data as { error?: string; code?: string } | undefined;
     const status = e.response?.status;
-    if (!e.response) return { kind: 'offline', message: 'Unable to connect to the service. Please try again.', retryable: true };
-    if (status === 429) return { kind: 'rate', message: body?.error ?? 'Too many attempts. Please wait a few minutes and try again.', retryable: false };
+    logDiagnostic(e, body?.code);
+    if (!e.response) return { kind: 'offline', message: 'Unable to connect to the service. Please check your connection and try again.', retryable: true };
+    if (status === 429) return { kind: 'rate', message: 'Too many login attempts. Please try again later.', retryable: false };
+    if (status === 401) {
+      // A failed sign-in means bad credentials; a 401 anywhere else (after the refresh attempt) means the session is gone.
+      if (e.config?.url?.startsWith('/auth/login')) return { kind: 'credentials', message: 'Incorrect email or password.', retryable: false };
+      return { kind: 'expired', message: 'Your session has expired. Please sign in again.', retryable: false };
+    }
     if (status === 403) return { kind: 'denied', message: body?.error ?? 'You do not have permission to view this.', retryable: false };
     // Schema behind the code needs an administrator to apply migrations; retrying cannot help.
     if (body?.code === 'SCHEMA_OUT_OF_DATE') return { kind: 'maintenance', message: 'Database maintenance is required. Please contact your administrator.', retryable: false };
-    if (body?.code === 'DATABASE_UNAVAILABLE') return { kind: 'database', message: 'Unable to connect to the service. Please try again.', retryable: true };
+    if (body?.code === 'DATABASE_UNAVAILABLE' || body?.code === 'CONFIG_INVALID') return { kind: 'database', message: 'The service is temporarily unavailable. Please try again shortly.', retryable: true };
     if (status && status >= 500) return { kind: 'server', message: 'The service is temporarily unavailable. Please try again shortly.', retryable: [502, 503, 504].includes(status) };
     if (body?.error) return { kind: 'other', message: body.error, retryable: false };
     return { kind: 'other', message: `Request failed (${status})`, retryable: false };
