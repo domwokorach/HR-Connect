@@ -41,13 +41,13 @@ function Row({ label, value, copyLabel, doneLabel }: { label: string; value: str
 }
 
 /**
- * Development-only demo card. login.tsx requires this module only when `__DEV__` is true and renders it only when
- * EXPO_PUBLIC_DEMO_LOGIN=true. It fills the controlled form fields and never submits.
+ * Demo card for isolated demo deployments. login.tsx requires this module only when EXPO_PUBLIC_DEMO_LOGIN=true.
+ * It fills the controlled form fields and never submits; signing in still goes through POST /api/auth/login.
  */
 export function DemoAccountCard({ onFill, disabled }: { onFill: (email: string, password: string) => void; disabled?: boolean }) {
   const type = useAuthType();
   const { success } = useToast();
-  const fill = () => { onFill(DEMO_ADMIN.email, DEMO_ADMIN.password); success('Demo credentials filled. Press Sign in securely to continue.'); };
+  const fill = () => { onFill(DEMO_ADMIN.email, DEMO_ADMIN.password); success('Demo credentials filled successfully.'); };
   return (
     <View style={{ backgroundColor: AUTH.surface, borderRadius: 16, borderWidth: 1, borderColor: AUTH.border, padding: 20, gap: 16 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>

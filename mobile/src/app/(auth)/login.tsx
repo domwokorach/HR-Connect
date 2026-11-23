@@ -6,15 +6,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AUTH, AuthAlert, EmailField, FieldError, ForgotPasswordLink, FormHeading, HeroPanel, PasswordField, RememberMe, SecureSignInButton, useAuthType, type SignInStatus } from '@/components/auth/auth';
 import { FORM_MAX_WIDTH, HERO_SHARE, authLayoutMode } from '@/components/auth/layout';
 import { useAuth } from '@/lib/auth';
-import { DEMO_LOGIN_ENABLED } from '@/lib/demo';
 import { ModeProvider } from '@/providers/mode-provider';
 import { PaletteProvider } from '@/providers/palette-provider';
 
 /**
- * Demo card: required only in development builds (`__DEV__` is false in production, so Metro drops this require and the
- * credentials module with it) and rendered only when EXPO_PUBLIC_DEMO_LOGIN=true.
+ * Demo card: required only when EXPO_PUBLIC_DEMO_LOGIN=true. Expo inlines that variable at build time, so in a normal
+ * build the condition is the constant `false`, Metro drops the require and the credentials module goes with it.
+ * Keep the comparison inline; hoisting it into a shared constant defeats the dead-code elimination.
  */
-const DemoAccountCard = __DEV__
+const DemoAccountCard = process.env.EXPO_PUBLIC_DEMO_LOGIN === 'true'
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   ? (require('@/components/auth/DemoAccountCard') as typeof import('@/components/auth/DemoAccountCard')).DemoAccountCard
   : null;
@@ -60,8 +60,7 @@ function SignInForm({ compact }: { compact: boolean }) {
           <ForgotPasswordLink onPress={() => router.push('/forgot-password' as never)} disabled={busy} />
         </View>
       </View>
-      <SecureSignInButton status={status} onPress={submit} />
-      {DEMO_LOGIN_ENABLED && DemoAccountCard ? (
+      {DemoAccountCard ? (
         <>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             <View style={{ flex: 1, height: 1, backgroundColor: AUTH.border }} />
@@ -71,6 +70,7 @@ function SignInForm({ compact }: { compact: boolean }) {
           <DemoAccountCard disabled={busy} onFill={(e, p) => { setEmail(e); setPassword(p); setFieldErr({}); setError(null); }} />
         </>
       ) : null}
+      <SecureSignInButton status={status} onPress={submit} />
     </View>
   );
 }
